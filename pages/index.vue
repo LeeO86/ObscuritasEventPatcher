@@ -260,10 +260,9 @@ watch(
   (currentInterfaces) => {
     if (!selectedInterfaceName.value || !currentInterfaces.some((networkInterface) => networkInterface.name === selectedInterfaceName.value)) {
       selectedInterfaceName.value = currentInterfaces[0]?.name ?? "";
+      syncInterfaceForm();
     }
-    syncInterfaceForm();
   },
-  { deep: true },
 );
 
 watch(selectedInterfaceName, syncInterfaceForm);
