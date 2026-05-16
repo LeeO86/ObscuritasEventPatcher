@@ -1,16 +1,6 @@
-import { Server } from "socket.io";
-import type { ClientToServerEvents, ServerToClientEvents } from "~/domain";
-import { registerSocketHandlers } from "../realtime/registerSocketHandlers";
+import { closeRealtimeServer, getRealtimeServer } from "../realtime/socketServer";
 
 export default defineNitroPlugin((nitroApp) => {
-  nitroApp.hooks.hookOnce("listen", (server) => {
-    const io = new Server<ClientToServerEvents, ServerToClientEvents>(server, {
-      path: "/socket.io",
-      cors: {
-        origin: "*",
-      },
-    });
-
-    registerSocketHandlers(io);
-  });
+  getRealtimeServer();
+  nitroApp.hooks.hookOnce("close", closeRealtimeServer);
 });

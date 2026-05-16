@@ -32,7 +32,7 @@ export function useRealtimeNetwork() {
       return;
     }
 
-    const client = io({ path: "/socket.io" });
+    const client = io({ path: "/socket.io", transports: ["polling"] });
     socket.value = client;
 
     client.on("connect", async () => {
