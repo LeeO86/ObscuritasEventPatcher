@@ -4,7 +4,7 @@
       <div class="mx-auto flex max-w-7xl flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p class="text-sm font-semibold uppercase tracking-[0.35em] text-cyan-300">Arista gNMI Portal</p>
-          <h1 class="mt-2 text-3xl font-bold tracking-tight">Network Management Platform</h1>
+          <h1 class="mt-2 text-3xl font-bold tracking-tight">Obscuritas Event Patcher</h1>
           <p class="mt-2 max-w-3xl text-sm text-slate-300">
             Read-only telemetry is open to everyone. Switch and interface changes require portal authentication.
           </p>

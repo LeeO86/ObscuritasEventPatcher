@@ -1,4 +1,4 @@
-# gNMI Network Management Platform
+# Obscuritas Event Patcher
 
 Nuxt 3 prototype for managing Arista switches through a Socket.IO realtime API and an OpenConfig gNMI infrastructure boundary.
 

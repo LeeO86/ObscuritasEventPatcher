@@ -1,5 +1,5 @@
 {
-  "name": "gnmi-network-management-platform",
+  "name": "obscuritas-event-patcher",
   "private": true,
   "type": "module",
   "scripts": {

@@ -5,11 +5,11 @@ export default defineNuxtConfig({
   devtools: { enabled: true },
   app: {
     head: {
-      title: "gNMI Network Management Platform",
+      title: "Obscuritas Event Patcher",
       meta: [
         {
           name: "description",
-          content: "Socket.IO and gNMI based network management portal for Arista switches.",
+          content: "Socket.IO and gNMI based Obscuritas Event Patcher portal for Arista switches.",
         },
       ],
     },
