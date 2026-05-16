@@ -5,6 +5,7 @@
 .nitro
 .cache
 dist
+.proto-includes
 
 # Node dependencies
 node_modules

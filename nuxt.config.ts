@@ -1,10 +1,19 @@
 import Lara from "@primevue/themes/lara";
-import Material from "@primevue/themes/material";
-import PrimeVue from "primevue/config";
 
 export default defineNuxtConfig({
   compatibilityDate: "2024-04-03",
   devtools: { enabled: true },
+  app: {
+    head: {
+      title: "gNMI Network Management Platform",
+      meta: [
+        {
+          name: "description",
+          content: "Socket.IO and gNMI based network management portal for Arista switches.",
+        },
+      ],
+    },
+  },
 
   modules: ["@primevue/nuxt-module"],
   css: [
