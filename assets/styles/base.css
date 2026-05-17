@@ -1,0 +1,65 @@
+@layer base {
+  html {
+    background: #020617;
+  }
+
+  body {
+    min-width: 320px;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply rounded-3xl border border-slate-800 bg-slate-900/70 p-5 shadow-xl shadow-slate-950/20;
+  }
+
+  .section-title {
+    @apply text-lg font-bold tracking-tight text-white;
+  }
+
+  .metric-card {
+    @apply rounded-3xl border border-slate-800 bg-slate-900/70 p-5;
+  }
+
+  .metric-card span {
+    @apply block text-sm text-slate-400;
+  }
+
+  .metric-card strong {
+    @apply mt-2 block text-2xl font-bold text-white;
+  }
+
+  .field {
+    @apply w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-400 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .label {
+    @apply text-xs font-semibold uppercase tracking-wide text-slate-400;
+  }
+
+  .btn-primary {
+    @apply rounded-2xl bg-cyan-400 px-4 py-2 text-sm font-bold text-slate-950 transition hover:bg-cyan-300;
+  }
+
+  .btn-secondary {
+    @apply rounded-2xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-slate-500 hover:bg-slate-800;
+  }
+
+  .status-pill {
+    @apply rounded-full px-2 py-1 text-xs font-semibold uppercase;
+  }
+
+  .status-pill[data-status="online"],
+  .status-pill[data-status="up"] {
+    @apply bg-emerald-500/15 text-emerald-300;
+  }
+
+  .status-pill[data-status="degraded"] {
+    @apply bg-amber-500/15 text-amber-300;
+  }
+
+  .status-pill[data-status="offline"],
+  .status-pill[data-status="down"] {
+    @apply bg-red-500/15 text-red-300;
+  }
+}

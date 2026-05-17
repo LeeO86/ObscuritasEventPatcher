@@ -1,0 +1,15 @@
+{
+  "name": "Obscuritas Event Patcher",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "postCreateCommand": "npm ci",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "Vue.volar",
+        "GitHub.vscode-github-actions"
+      ]
+    }
+  }
+}

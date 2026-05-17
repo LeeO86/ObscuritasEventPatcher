@@ -1,75 +1,53 @@
-# Nuxt Minimal Starter
+# Obscuritas Event Patcher
 
-Look at the [Nuxt documentation](https://nuxt.com/docs/getting-started/introduction) to learn more.
+Nuxt 3 prototype for managing Arista switches through a Socket.IO realtime API and an OpenConfig gNMI infrastructure boundary.
+
+## Architecture
+
+- `pages` and `composables`: UI layer.
+- `server/realtime`: Socket.IO API handlers. No REST endpoints are used for application logic.
+- `server/services`: business logic for auth, switches, interfaces, discovery, and credentials.
+- `server/infrastructure`: gNMI client implementation using `@grpc/grpc-js`.
+- `domain`: shared TypeScript models and Socket.IO event contracts.
+- `generated`: `ts-proto` output from the OpenConfig gNMI protobuf submodule.
+
+## Environment
+
+```bash
+APP_USERNAME=admin
+APP_PASSWORD=secret
+SWITCH_USERNAMES=admin,operator,automation
+SWITCH_PASSWORDS=secret1,secret2,secret3
+NUXT_PORT=3000
+```
+
+Reads are allowed without login. Writes require portal login and are independent from switch credentials.
+
+Switch passwords are never stored per device. The server tries all username/password combinations and caches only the username plus password index for the working credential.
 
 ## Setup
 
-Make sure to install dependencies:
-
 ```bash
-# npm
-npm install
-
-# pnpm
-pnpm install
-
-# yarn
-yarn install
-
-# bun
-bun install
+git submodule update --init --recursive
+npm ci
+npm run generate:gnmi
 ```
 
-## Development Server
-
-Start the development server on `http://localhost:3000`:
+## Development
 
 ```bash
-# npm
 npm run dev
-
-# pnpm
-pnpm dev
-
-# yarn
-yarn dev
-
-# bun
-bun run dev
 ```
 
-## Production
+The app starts on `http://localhost:3000`.
 
-Build the application for production:
+## Build
 
 ```bash
-# npm
+npm run generate:gnmi
 npm run build
-
-# pnpm
-pnpm build
-
-# yarn
-yarn build
-
-# bun
-bun run build
 ```
 
-Locally preview production build:
+## CI
 
-```bash
-# npm
-npm run preview
-
-# pnpm
-pnpm preview
-
-# yarn
-yarn preview
-
-# bun
-bun run preview
-```
-
-Check out the [deployment documentation](https://nuxt.com/docs/getting-started/deployment) for more information.
+GitHub Actions checks out submodules, installs Node.js 22, installs `protobuf-compiler`, runs `npm ci`, regenerates gNMI TypeScript, validates `generated` has no drift, and builds the Nuxt app.
