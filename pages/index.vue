@@ -214,11 +214,20 @@
               </label>
               <label class="space-y-2">
                 <span class="label">{{ configForm.mode === "access" ? "Access VLAN" : "Native VLAN" }}</span>
-                <input v-model.number="primaryVlan" class="field" min="1" max="4094" type="number" />
+                <select v-model.number="primaryVlan" class="field">
+                  <option v-for="vlan in vlanOptions" :key="vlan.id" :value="vlan.id">
+                    VLAN {{ vlan.id }} - {{ vlan.description }}
+                  </option>
+                </select>
               </label>
               <label v-if="configForm.mode === 'trunk'" class="space-y-2">
                 <span class="label">Allowed VLANs</span>
-                <input v-model="configForm.allowedVlans" class="field" placeholder="10,20,30" />
+                <select v-model="selectedAllowedVlans" class="field min-h-32" multiple>
+                  <option v-for="vlan in vlanOptions" :key="vlan.id" :value="vlan.id">
+                    VLAN {{ vlan.id }} - {{ vlan.description }}
+                  </option>
+                </select>
+                <p class="text-xs text-slate-500">Hold Ctrl or Shift to select multiple allowed VLANs.</p>
               </label>
               <label class="space-y-2 md:col-span-2">
                 <span class="label">Description template</span>
@@ -282,7 +291,7 @@
 </template>
 
 <script lang="ts" setup>
-import type { InterfaceMode, NetworkInterface, RunningConfigDiffLine, Switch } from "~/domain";
+import type { InterfaceMode, NetworkInterface, RunningConfigDiffLine, Switch, VlanDefinition } from "~/domain";
 
 type WorkspaceTab = "status" | "config" | "running";
 
@@ -317,13 +326,13 @@ const addSwitchForm = reactive({ hostname: "", mgmtIp: "" });
 const activeTab = ref<WorkspaceTab>("status");
 const selectedPortNames = ref<string[]>([]);
 const primaryVlan = ref(20);
+const selectedAllowedVlans = ref<number[]>([10, 20, 30]);
 const runningConfigDraft = ref("");
 const speedOptions = ["auto", "100M", "1G", "10G", "25G", "40G", "100G"];
 const configForm = reactive({
   descriptionTemplate: "",
   mode: "access" as InterfaceMode,
   speed: "auto",
-  allowedVlans: "10,20,30",
 });
 
 const canWrite = computed(() => auth.value.authenticated);
@@ -344,10 +353,35 @@ const selectedSwitchIssue = computed(() => {
   return undefined;
 });
 const selectedLayoutRows = computed(() => selectedSwitch.value ? layoutRows(selectedSwitch.value) : []);
+const vlanOptions = computed<VlanDefinition[]>(() => {
+  if (vlans.value.length > 0) {
+    return vlans.value;
+  }
+
+  return Object.keys(uiConfig.value?.vlanColors ?? {})
+    .map((vlanId) => Number(vlanId))
+    .filter((vlanId) => Number.isInteger(vlanId))
+    .sort((left, right) => left - right)
+    .map((id) => ({ id, description: `VLAN ${id}` }));
+});
 
 watch(runningConfig, (document) => {
   runningConfigDraft.value = document?.content ?? "";
 });
+
+watch(vlanOptions, (options) => {
+  if (options.length === 0) {
+    return;
+  }
+
+  if (!options.some((vlan) => vlan.id === primaryVlan.value)) {
+    primaryVlan.value = options[0].id;
+  }
+
+  selectedAllowedVlans.value = selectedAllowedVlans.value.filter((vlanId) =>
+    options.some((vlan) => vlan.id === vlanId),
+  );
+}, { immediate: true });
 
 watch(selectedSwitchId, () => {
   selectedPortNames.value = [];
@@ -402,7 +436,7 @@ async function saveBulkConfiguration() {
     speed: configForm.speed,
     vlan: configForm.mode === "access"
       ? { accessVlan: primaryVlan.value, allowedVlans: [] }
-      : { nativeVlan: primaryVlan.value, allowedVlans: parseVlans(configForm.allowedVlans) },
+      : { nativeVlan: primaryVlan.value, allowedVlans: selectedAllowedVlans.value },
   });
 }
 
@@ -535,13 +569,6 @@ function vlanShortLabel(networkInterface: NetworkInterface | undefined): string 
 
 function vlanDescription(vlanId: number): string {
   return vlans.value.find((vlan) => vlan.id === vlanId)?.description ?? "unknown";
-}
-
-function parseVlans(value: string): number[] {
-  return value
-    .split(",")
-    .map((entry) => Number(entry.trim()))
-    .filter((entry) => Number.isInteger(entry) && entry > 0 && entry <= 4094);
 }
 
 function shortPortName(portName: string): string {
