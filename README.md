@@ -18,12 +18,15 @@ APP_USERNAME=admin
 APP_PASSWORD=secret
 SWITCH_USERNAMES=admin,operator,automation
 SWITCH_PASSWORDS=secret1,secret2,secret3
+SWITCH_UI_CONFIG_PATH=/config/switch-ui.json
 NUXT_PORT=3000
 ```
 
 Reads are allowed without login. Writes require portal login and are independent from switch credentials.
 
 Switch passwords are never stored per device. The server tries all username/password combinations and caches only the username plus password index for the working credential.
+
+The optional switch UI config file defines VLAN colors and model-specific port layouts. If it is missing or invalid, the app keeps running with defaults and shows a "please contact your administrator" warning. See `config/switch-ui.example.json`.
 
 ## Setup
 

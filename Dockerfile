@@ -21,6 +21,7 @@ ENV NITRO_HOST=0.0.0.0
 ENV PORT=3000
 
 COPY --from=build /app/.output ./.output
+COPY --from=build /app/config/switch-ui.example.json /config/switch-ui.json
 
 EXPOSE 3000
 

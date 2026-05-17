@@ -28,8 +28,10 @@ export function registerSocketHandlers(io: RealtimeServer): void {
 
   io.on("connection", (socket) => {
     registerAuthHandlers(socket);
+    registerConfigHandlers(socket);
     registerSwitchHandlers(io, socket);
     registerInterfaceHandlers(io, socket);
+    registerRunningConfigHandlers(socket);
     registerDiscoveryHandlers(socket);
     registerTelemetryHandlers(socket);
 
@@ -39,6 +41,16 @@ export function registerSocketHandlers(io: RealtimeServer): void {
       }
       socket.data.telemetry.clear();
     });
+  });
+}
+
+function registerConfigHandlers(socket: RealtimeSocket): void {
+  socket.on("ui-config:get", (callback) => {
+    callback(ok(services.uiConfig.getConfig()));
+  });
+
+  socket.on("vlans:list", (payload, callback) => {
+    callback(ok(services.vlans.list(payload.switchId)));
   });
 }
 
@@ -124,6 +136,56 @@ function registerInterfaceHandlers(io: RealtimeServer, socket: RealtimeSocket): 
     const interfaces = services.interfaces.list(payload.switchId);
     io.emit("interfaces:changed", interfaces);
     callback(ok(updated));
+  });
+
+  socket.on("interfaces:bulk-update", (payload, callback) => {
+    if (!isAuthenticated(socket)) {
+      callback(fail("Login required for interface changes"));
+      return;
+    }
+
+    const updated = services.interfaces.bulkUpdate(payload);
+
+    if (updated.length === 0) {
+      callback(fail("No matching interfaces found"));
+      return;
+    }
+
+    const interfaces = services.interfaces.list(payload.switchId);
+    io.emit("interfaces:changed", interfaces);
+    callback(ok(updated));
+  });
+}
+
+function registerRunningConfigHandlers(socket: RealtimeSocket): void {
+  socket.on("running-config:get", (payload, callback) => {
+    if (!isAuthenticated(socket)) {
+      callback(fail("Login required for running config"));
+      return;
+    }
+
+    const document = services.runningConfig.get(payload.switchId);
+    callback(document ? ok(document) : fail("Switch not found"));
+  });
+
+  socket.on("running-config:diff", (payload, callback) => {
+    if (!isAuthenticated(socket)) {
+      callback(fail("Login required for running config"));
+      return;
+    }
+
+    const diff = services.runningConfig.diff(payload);
+    callback(diff ? ok(diff) : fail("Switch not found"));
+  });
+
+  socket.on("running-config:apply", (payload, callback) => {
+    if (!isAuthenticated(socket)) {
+      callback(fail("Login required for running config changes"));
+      return;
+    }
+
+    const document = services.runningConfig.apply(payload);
+    callback(document ? ok(document) : fail("Switch not found"));
   });
 }
 

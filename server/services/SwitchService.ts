@@ -9,6 +9,7 @@ export class SwitchService {
         id: "leaf-01",
         hostname: "leaf-01",
         mgmtIp: "10.0.10.11",
+        model: "arista-720xp",
         status: "online",
         credentialState: "unknown",
       },
@@ -19,6 +20,7 @@ export class SwitchService {
         id: "leaf-02",
         hostname: "leaf-02",
         mgmtIp: "10.0.10.12",
+        model: "fallback",
         status: "degraded",
         credentialState: "unknown",
       },
@@ -41,6 +43,7 @@ export class SwitchService {
       id,
       hostname: input.hostname.trim(),
       mgmtIp: input.mgmtIp.trim(),
+      model: "fallback",
       status: "offline",
       credentialState: "testing",
     };

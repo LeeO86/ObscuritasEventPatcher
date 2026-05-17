@@ -6,6 +6,7 @@ export type CredentialState = "unknown" | "testing" | "valid" | "invalid";
 export type SwitchStatus = "online" | "degraded" | "offline";
 export type InterfaceMode = "access" | "trunk";
 export type InterfaceStatus = "up" | "down";
+export type InterfaceMedia = "copper" | "sfp";
 
 export interface AuthStatus {
   authenticated: boolean;
@@ -16,6 +17,7 @@ export interface Switch {
   id: string;
   hostname: string;
   mgmtIp: string;
+  model: string;
   status: SwitchStatus;
   credentialState: CredentialState;
 }
@@ -33,6 +35,11 @@ export interface VlanConfig {
   accessVlan?: number;
   nativeVlan?: number;
   allowedVlans: number[];
+}
+
+export interface VlanDefinition {
+  id: number;
+  description: string;
 }
 
 export interface TrafficCounters {
@@ -59,6 +66,8 @@ export interface NetworkInterface {
   description: string;
   mode: InterfaceMode;
   vlan: VlanConfig;
+  speed: string;
+  media: InterfaceMedia;
   status: InterfaceStatus;
   counters: TrafficCounters;
   optics: OpticalMetrics;
@@ -76,6 +85,54 @@ export interface UpdateInterfaceInput {
   mode: InterfaceMode;
   vlan: VlanConfig;
   description?: string;
+  speed?: string;
+}
+
+export interface BulkUpdateInterfaceInput {
+  switchId: string;
+  names: string[];
+  mode?: InterfaceMode;
+  vlan?: VlanConfig;
+  descriptionTemplate?: string;
+  speed?: string;
+}
+
+export interface SwitchPortLayout {
+  model: string;
+  rows: string[][];
+}
+
+export interface SwitchUiConfig {
+  configPath: string;
+  vlanColors: Record<string, string>;
+  switchLayouts: Record<string, SwitchPortLayout>;
+  errors: string[];
+}
+
+export interface RunningConfigDocument {
+  switchId: string;
+  content: string;
+  loadedAt: string;
+  source: "gnmi" | "service-cache";
+  warning?: string;
+}
+
+export interface RunningConfigDiffLine {
+  type: "context" | "add" | "remove";
+  text: string;
+}
+
+export interface RunningConfigDiff {
+  switchId: string;
+  generatedAt: string;
+  diffLines: RunningConfigDiffLine[];
+  supportedByGnmi: boolean;
+  note: string;
+}
+
+export interface RunningConfigEditInput {
+  switchId: string;
+  content: string;
 }
 
 export interface DiscoveryResult {
