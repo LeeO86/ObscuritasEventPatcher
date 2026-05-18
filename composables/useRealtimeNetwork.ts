@@ -1,4 +1,4 @@
-import { io, type Socket } from "socket.io-client";
+import type { Socket } from "socket.io-client";
 import type {
   AddSwitchInput,
   ApiResponse,
@@ -19,6 +19,7 @@ import type {
 } from "~/domain";
 
 type RealtimeSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
+type SocketTransport = "polling";
 
 export function useRealtimeNetwork() {
   const socket = useState<RealtimeSocket | null>("realtime-socket", () => null);
@@ -38,12 +39,18 @@ export function useRealtimeNetwork() {
 
   const selectedSwitch = computed(() => switches.value.find((networkSwitch) => networkSwitch.id === selectedSwitchId.value));
 
-  function connect() {
+  async function connect() {
     if (!import.meta.client || socket.value) {
       return;
     }
 
-    const client = io({ path: "/socket.io", transports: ["polling"] });
+    const { io } = await import("socket.io-client");
+    const clientConfig = socketClientConfig();
+    const client = io(clientConfig.url || undefined, {
+      path: clientConfig.path,
+      transports: clientConfig.transports,
+      timeout: 10_000,
+    });
     socket.value = client;
 
     client.on("connect", async () => {
@@ -57,16 +64,27 @@ export function useRealtimeNetwork() {
       connected.value = false;
     });
 
+    client.on("connect_error", (connectionError) => {
+      error.value = `Realtime connection failed: ${connectionError.message}`;
+    });
+
     client.on("switches:changed", async (payload) => {
       switches.value = payload;
-      selectedSwitchId.value = selectedSwitchId.value ?? payload[0]?.id;
-      if (selectedSwitchId.value && payload.every((item) => item.switchId === selectedSwitchId.value)) {
-        interfaceCache.value = { ...interfaceCache.value, [selectedSwitchId.value]: payload };
+      selectedSwitchId.value = payload.some((networkSwitch) => networkSwitch.id === selectedSwitchId.value)
+        ? selectedSwitchId.value
+        : payload[0]?.id;
+      await Promise.all(payload.map((networkSwitch) => loadInterfaceCache(networkSwitch.id)));
+      if (selectedSwitchId.value) {
+        interfaces.value = interfaceCache.value[selectedSwitchId.value] ?? [];
         await loadVlans(selectedSwitchId.value);
       }
     });
 
     client.on("interfaces:changed", (payload) => {
+      const switchId = payload[0]?.switchId;
+      if (switchId) {
+        interfaceCache.value = { ...interfaceCache.value, [switchId]: payload };
+      }
       if (!selectedSwitchId.value || payload.every((item) => item.switchId === selectedSwitchId.value)) {
         interfaces.value = payload;
       }
@@ -79,6 +97,17 @@ export function useRealtimeNetwork() {
         lastTelemetryAt.value = payload.sampledAt;
       }
     });
+  }
+
+  function socketClientConfig(): { path: string; transports: SocketTransport[]; url: string } {
+    const config = useRuntimeConfig();
+    return {
+      path: normalizeSocketPath(config.public.socketIoPath),
+      // The same-origin Nitro middleware handles Engine.IO HTTP polling requests.
+      // WebSocket upgrades do not pass through H3 middleware, so keep this explicit.
+      transports: parseSocketTransports(config.public.socketIoTransports),
+      url: String(config.public.socketIoUrl ?? ""),
+    };
   }
 
   async function refreshAuth() {
@@ -315,4 +344,22 @@ export function useRealtimeNetwork() {
     updateInterface,
     vlans,
   };
+}
+
+function normalizeSocketPath(path: unknown): string {
+  const normalizedPath = String(path || "/socket.io").trim() || "/socket.io";
+  return normalizedPath.startsWith("/") ? normalizedPath : `/${normalizedPath}`;
+}
+
+function parseSocketTransports(transports: unknown): SocketTransport[] {
+  const requestedTransports = String(transports || "polling")
+    .split(",")
+    .map((transport) => transport.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (requestedTransports.some((transport) => transport !== "polling")) {
+    console.warn("This Nuxt Socket.IO integration supports polling only. Ignoring unsupported realtime transports.");
+  }
+
+  return ["polling"];
 }

@@ -19,7 +19,10 @@ APP_PASSWORD=secret
 SWITCH_USERNAMES=admin,operator,automation
 SWITCH_PASSWORDS=secret1,secret2,secret3
 SWITCH_UI_CONFIG_PATH=/config/switch-ui.json
-NUXT_PORT=3000
+NUXT_PUBLIC_SOCKET_IO_PATH=/socket.io
+NUXT_PUBLIC_SOCKET_IO_TRANSPORTS=polling
+SOCKET_IO_CORS_ORIGIN=*
+PORT=3000
 ```
 
 Reads are allowed without login. Writes require portal login and are independent from switch credentials.
@@ -27,6 +30,10 @@ Reads are allowed without login. Writes require portal login and are independent
 Switch passwords are never stored per device. The server tries all username/password combinations and caches only the username plus password index for the working credential.
 
 The optional switch UI config file defines VLAN colors and model-specific port layouts. If it is missing or invalid, the app keeps running with defaults and shows a "please contact your administrator" warning. See `config/switch-ui.example.json`.
+
+## Realtime transport
+
+The app serves Socket.IO on the same Nuxt/Nitro origin at `NUXT_PUBLIC_SOCKET_IO_PATH` and intentionally uses Engine.IO long-polling. WebSocket upgrade requests do not pass through H3 middleware, so same-port WebSocket transport is not enabled in this integration. If a deployment requires WebSockets, run Socket.IO on a dedicated Node listener and proxy upgrade requests to it.
 
 ## Setup
 

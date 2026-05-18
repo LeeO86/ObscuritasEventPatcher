@@ -3,6 +3,13 @@ import Lara from "@primevue/themes/lara";
 export default defineNuxtConfig({
   compatibilityDate: "2024-04-03",
   devtools: { enabled: true },
+  runtimeConfig: {
+    public: {
+      socketIoPath: "/socket.io",
+      socketIoTransports: "polling",
+      socketIoUrl: "",
+    },
+  },
   app: {
     head: {
       title: "Obscuritas Event Patcher",

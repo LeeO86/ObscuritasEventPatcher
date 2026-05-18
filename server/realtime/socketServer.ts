@@ -4,7 +4,8 @@ import { Server as SocketServer } from "socket.io";
 import type { ClientToServerEvents, ServerToClientEvents } from "~/domain";
 import { registerSocketHandlers } from "./registerSocketHandlers";
 
-const SOCKET_PATH = "/socket.io";
+const SOCKET_PATH = normalizeSocketPath(process.env.NUXT_PUBLIC_SOCKET_IO_PATH ?? "/socket.io");
+const SOCKET_TRANSPORTS = ["polling"] as const;
 
 type RealtimeServer = SocketServer<ClientToServerEvents, ServerToClientEvents>;
 
@@ -22,20 +23,20 @@ export function getRealtimeServer(): RealtimeState {
 
   const engine = new EngineServer({
     path: SOCKET_PATH,
-    transports: ["polling"],
+    transports: [...SOCKET_TRANSPORTS],
     allowUpgrades: false,
     cors: {
-      origin: "*",
+      origin: process.env.SOCKET_IO_CORS_ORIGIN ?? "*",
     },
   });
 
   const io = new SocketServer<ClientToServerEvents, ServerToClientEvents>({
     path: SOCKET_PATH,
     serveClient: false,
-    transports: ["polling"],
+    transports: [...SOCKET_TRANSPORTS],
     allowUpgrades: false,
     cors: {
-      origin: "*",
+      origin: process.env.SOCKET_IO_CORS_ORIGIN ?? "*",
     },
   });
 
@@ -63,13 +64,17 @@ export function handleSocketRequest(event: H3Event): Promise<void> | undefined {
   }
 
   const { engine } = getRealtimeServer();
-  // Engine.IO owns the Node response for this request; stop Nuxt from rendering SPA HTML.
-  const handledEvent = event as H3Event & { _handled: boolean };
-  handledEvent._handled = true;
 
   return new Promise((resolve) => {
     event.node.res.once("finish", resolve);
     event.node.res.once("close", resolve);
+    // Engine.IO owns this HTTP response. Returning this promise keeps H3 from
+    // falling through to Nuxt's SSR renderer for /socket.io polling requests.
     engine.handleRequest(event.node.req, event.node.res);
   });
+}
+
+function normalizeSocketPath(path: string): string {
+  const trimmed = path.trim() || "/socket.io";
+  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
 }
