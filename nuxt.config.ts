@@ -6,7 +6,7 @@ export default defineNuxtConfig({
   runtimeConfig: {
     public: {
       socketIoPath: "/socket.io",
-      socketIoTransports: "polling",
+      socketIoTransports: "polling,websocket",
       socketIoUrl: "",
     },
   },

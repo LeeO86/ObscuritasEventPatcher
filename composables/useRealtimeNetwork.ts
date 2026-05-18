@@ -19,7 +19,7 @@ import type {
 } from "~/domain";
 
 type RealtimeSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
-type SocketTransport = "polling";
+type SocketTransport = "polling" | "websocket";
 
 export function useRealtimeNetwork() {
   const socket = useState<RealtimeSocket | null>("realtime-socket", () => null);
@@ -49,6 +49,7 @@ export function useRealtimeNetwork() {
     const client = io(clientConfig.url || undefined, {
       path: clientConfig.path,
       transports: clientConfig.transports,
+      upgrade: true,
       timeout: 10_000,
     });
     socket.value = client;
@@ -103,8 +104,6 @@ export function useRealtimeNetwork() {
     const config = useRuntimeConfig();
     return {
       path: normalizeSocketPath(config.public.socketIoPath),
-      // The same-origin Nitro middleware handles Engine.IO HTTP polling requests.
-      // WebSocket upgrades do not pass through H3 middleware, so keep this explicit.
       transports: parseSocketTransports(config.public.socketIoTransports),
       url: String(config.public.socketIoUrl ?? ""),
     };
@@ -357,9 +356,13 @@ function parseSocketTransports(transports: unknown): SocketTransport[] {
     .map((transport) => transport.trim().toLowerCase())
     .filter(Boolean);
 
-  if (requestedTransports.some((transport) => transport !== "polling")) {
-    console.warn("This Nuxt Socket.IO integration supports polling only. Ignoring unsupported realtime transports.");
+  const supportedTransports = requestedTransports.filter(
+    (transport): transport is SocketTransport => transport === "polling" || transport === "websocket",
+  );
+
+  if (supportedTransports.length === 0) {
+    return ["polling", "websocket"];
   }
 
-  return ["polling"];
+  return Array.from(new Set(supportedTransports));
 }

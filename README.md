@@ -20,7 +20,7 @@ SWITCH_USERNAMES=admin,operator,automation
 SWITCH_PASSWORDS=secret1,secret2,secret3
 SWITCH_UI_CONFIG_PATH=/config/switch-ui.json
 NUXT_PUBLIC_SOCKET_IO_PATH=/socket.io
-NUXT_PUBLIC_SOCKET_IO_TRANSPORTS=polling
+NUXT_PUBLIC_SOCKET_IO_TRANSPORTS=polling,websocket
 SOCKET_IO_CORS_ORIGIN=*
 PORT=3000
 ```
@@ -33,7 +33,7 @@ The optional switch UI config file defines VLAN colors and model-specific port l
 
 ## Realtime transport
 
-The app serves Socket.IO on the same Nuxt/Nitro origin at `NUXT_PUBLIC_SOCKET_IO_PATH` and intentionally uses Engine.IO long-polling. WebSocket upgrade requests do not pass through H3 middleware, so same-port WebSocket transport is not enabled in this integration. If a deployment requires WebSockets, run Socket.IO on a dedicated Node listener and proxy upgrade requests to it.
+The app serves Socket.IO on the same Nuxt/Nitro origin at `NUXT_PUBLIC_SOCKET_IO_PATH`. Engine.IO starts with HTTP long-polling and automatically upgrades to WebSocket when the browser and proxy path support it. The Nitro middleware bootstraps the Engine.IO server, then Engine.IO attaches to the underlying Node HTTP server so both polling requests and WebSocket upgrades use the same path.
 
 ## Setup
 
