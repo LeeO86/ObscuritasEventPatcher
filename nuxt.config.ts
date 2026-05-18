@@ -2,7 +2,16 @@ import Lara from "@primevue/themes/lara";
 
 export default defineNuxtConfig({
   compatibilityDate: "2024-04-03",
-  devtools: { enabled: true },
+  ssr: false,
+  devtools: { enabled: process.env.NODE_ENV !== "production" },
+  nitro: {
+    experimental: {
+      // Socket.IO owns Engine.IO polling and websocket upgrades in
+      // server/realtime/socketServer.ts. Nitro's native websocket flag is for
+      // defineWebSocketHandler/crossws routes and would add a second upgrade handler.
+      websocket: false,
+    },
+  },
   runtimeConfig: {
     public: {
       socketIoPath: "/socket.io",
