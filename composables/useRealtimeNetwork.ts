@@ -1,5 +1,6 @@
 import type { Socket } from "socket.io-client";
 import type {
+  ActivityLogEntry,
   AddSwitchInput,
   ApiResponse,
   AuthStatus,
@@ -36,6 +37,7 @@ export function useRealtimeNetwork() {
   const runningConfigDiff = useState<RunningConfigDiff | undefined>("running-config-diff", () => undefined);
   const lastTelemetryAt = useState<string | undefined>("last-telemetry-at", () => undefined);
   const error = useState<string | undefined>("realtime-error", () => undefined);
+  const activityLog = useState<ActivityLogEntry[]>("activity-log", () => []);
 
   const selectedSwitch = computed(() => switches.value.find((networkSwitch) => networkSwitch.id === selectedSwitchId.value));
 
@@ -57,6 +59,9 @@ export function useRealtimeNetwork() {
     client.on("connect", async () => {
       connected.value = true;
       await refreshAuth();
+      if (auth.value.authenticated) {
+        await loadActivityLog();
+      }
       await loadUiConfig();
       await loadSwitches();
     });
@@ -98,6 +103,14 @@ export function useRealtimeNetwork() {
         lastTelemetryAt.value = payload.sampledAt;
       }
     });
+
+    client.on("activity:append", (entry) => {
+      if (!auth.value.authenticated) {
+        return;
+      }
+
+      activityLog.value = [entry, ...activityLog.value].slice(0, 200);
+    });
   }
 
   function socketClientConfig(): { path: string; transports: SocketTransport[]; url: string } {
@@ -122,6 +135,7 @@ export function useRealtimeNetwork() {
     if (response.success) {
       auth.value = response.data;
       error.value = undefined;
+      await loadActivityLog();
     } else {
       error.value = response.error;
     }
@@ -132,6 +146,22 @@ export function useRealtimeNetwork() {
     const response = await request<AuthStatus>("auth:logout");
     if (response.success) {
       auth.value = response.data;
+      activityLog.value = [];
+    }
+    return response;
+  }
+
+  async function loadActivityLog() {
+    if (!auth.value.authenticated) {
+      activityLog.value = [];
+      return { success: false as const, error: "Login required to view activity log" };
+    }
+
+    const response = await request<ActivityLogEntry[]>("activity:list");
+    if (response.success) {
+      activityLog.value = response.data;
+    } else {
+      error.value = response.error;
     }
     return response;
   }
@@ -314,6 +344,7 @@ export function useRealtimeNetwork() {
   }
 
   return {
+    activityLog,
     addSwitch,
     applyRunningConfig,
     auth,
@@ -326,6 +357,7 @@ export function useRealtimeNetwork() {
     interfaceCache,
     interfaces,
     lastTelemetryAt,
+    loadActivityLog,
     loadRunningConfig,
     loadSwitches,
     loadUiConfig,

@@ -1,4 +1,5 @@
 import type {
+  ActivityLogEntry,
   AddSwitchInput,
   ApiResponse,
   AuthStatus,
@@ -51,12 +52,14 @@ export interface ClientToServerEvents {
   "discovery:lldp": (payload: SwitchIdInput, callback: ResponseCallback<DiscoveryResult>) => void;
   "telemetry:subscribe": (payload: TelemetrySubscription, callback: ResponseCallback<{ subscribed: boolean }>) => void;
   "telemetry:unsubscribe": (payload: TelemetrySubscription, callback: ResponseCallback<{ subscribed: boolean }>) => void;
+  "activity:list": (callback: ResponseCallback<ActivityLogEntry[]>) => void;
 }
 
 export interface ServerToClientEvents {
   "switches:changed": (payload: Switch[]) => void;
   "interfaces:changed": (payload: NetworkInterface[]) => void;
   "telemetry:update": (payload: TelemetryUpdate) => void;
+  "activity:append": (payload: ActivityLogEntry) => void;
 }
 
 export const WRITE_EVENTS = new Set<keyof ClientToServerEvents>([

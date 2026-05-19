@@ -20,6 +20,10 @@ type RealtimeServer = Server<ClientToServerEvents, ServerToClientEvents, Record<
 type RealtimeSocket = Socket<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
 
 export function registerSocketHandlers(io: RealtimeServer): void {
+  services.activityLog.subscribe((entry) => {
+    emitToAuthenticated(io, "activity:append", entry);
+  });
+
   io.use((socket, next) => {
     socket.data.auth = { authenticated: false };
     socket.data.telemetry = new Map();
@@ -28,6 +32,7 @@ export function registerSocketHandlers(io: RealtimeServer): void {
 
   io.on("connection", (socket) => {
     registerAuthHandlers(socket);
+    registerActivityHandlers(socket);
     registerConfigHandlers(socket);
     registerSwitchHandlers(io, socket);
     registerInterfaceHandlers(io, socket);
@@ -54,21 +59,55 @@ function registerConfigHandlers(socket: RealtimeSocket): void {
   });
 }
 
+function registerActivityHandlers(socket: RealtimeSocket): void {
+  socket.on("activity:list", (callback) => {
+    if (!isAuthenticated(socket)) {
+      callback(fail("Login required to view activity log"));
+      return;
+    }
+
+    callback(ok(services.activityLog.list()));
+  });
+}
+
 function registerAuthHandlers(socket: RealtimeSocket): void {
   socket.on("auth:login", (payload, callback) => {
     const status = services.auth.validate(payload.username, payload.password);
 
     if (!status) {
+      services.activityLog.append({
+        level: "warn",
+        category: "auth",
+        message: "Portal login failed",
+        details: `User ${payload.username}`,
+      });
       callback(fail("Invalid portal credentials"));
       return;
     }
 
     socket.data.auth = status;
+    services.activityLog.append({
+      level: "success",
+      category: "auth",
+      message: "Portal login succeeded",
+      details: `User ${status.username}`,
+    });
     callback(ok(status));
   });
 
   socket.on("auth:logout", (callback) => {
+    const username = socket.data.auth.username;
     socket.data.auth = { authenticated: false };
+
+    if (username) {
+      services.activityLog.append({
+        level: "info",
+        category: "auth",
+        message: "Portal logout",
+        details: `User ${username}`,
+      });
+    }
+
     callback(ok(socket.data.auth));
   });
 
@@ -133,6 +172,13 @@ function registerInterfaceHandlers(io: RealtimeServer, socket: RealtimeSocket): 
       return;
     }
 
+    services.activityLog.append({
+      level: "info",
+      category: "interface",
+      message: `Updated ${payload.name} on ${payload.switchId}`,
+      details: `Mode ${payload.mode}`,
+    });
+
     const interfaces = services.interfaces.list(payload.switchId);
     io.emit("interfaces:changed", interfaces);
     callback(ok(updated));
@@ -150,6 +196,12 @@ function registerInterfaceHandlers(io: RealtimeServer, socket: RealtimeSocket): 
       callback(fail("No matching interfaces found"));
       return;
     }
+
+    services.activityLog.append({
+      level: "info",
+      category: "interface",
+      message: `Bulk updated ${updated.length} ports on ${payload.switchId}`,
+    });
 
     const interfaces = services.interfaces.list(payload.switchId);
     io.emit("interfaces:changed", interfaces);
@@ -185,6 +237,15 @@ function registerRunningConfigHandlers(socket: RealtimeSocket): void {
     }
 
     const document = services.runningConfig.apply(payload);
+
+    if (document) {
+      services.activityLog.append({
+        level: "info",
+        category: "config",
+        message: `Applied running config on ${payload.switchId}`,
+      });
+    }
+
     callback(document ? ok(document) : fail("Switch not found"));
   });
 }
@@ -246,4 +307,16 @@ function telemetryKey(payload: TelemetrySubscription): string {
 
 function isAuthenticated(socket: RealtimeSocket): boolean {
   return socket.data.auth.authenticated;
+}
+
+function emitToAuthenticated(
+  io: RealtimeServer,
+  event: keyof ServerToClientEvents,
+  payload: ServerToClientEvents[keyof ServerToClientEvents],
+): void {
+  for (const connectedSocket of io.sockets.sockets.values()) {
+    if (connectedSocket.data.auth.authenticated) {
+      connectedSocket.emit(event, payload as never);
+    }
+  }
 }

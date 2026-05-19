@@ -44,7 +44,11 @@
                 <span class="font-semibold">{{ networkSwitch.hostname }}</span>
                 <span class="status-pill" :data-status="networkSwitch.status">{{ networkSwitch.status }}</span>
               </div>
-              <p class="mt-1 text-sm text-slate-400">{{ networkSwitch.mgmtIp }} · {{ networkSwitch.model }}</p>
+              <p class="mt-1 text-sm text-slate-400">
+                {{ networkSwitch.mgmtIp }}:{{ networkSwitch.mgmtPort }}
+                · {{ networkSwitch.gnmiTls ? "TLS" : "insecure" }}
+                · {{ networkSwitch.model }}
+              </p>
               <div class="mt-3 rounded-xl border border-slate-800 bg-slate-950/70 p-2">
                 <div v-for="(row, rowIndex) in layoutRows(networkSwitch)" :key="`${networkSwitch.id}-${rowIndex}`" class="flex gap-1">
                   <span
@@ -65,15 +69,53 @@
 
         <div class="panel">
           <h2 class="section-title">Add switch</h2>
-          <p class="mt-2 text-sm text-slate-400">Uses shared credential combinations from environment variables.</p>
+          <p class="mt-2 text-sm text-slate-400">
+            Credentials come from SWITCH_USERNAMES / SWITCH_PASSWORDS. Use an IP reachable from this server
+            (in a devcontainer, 127.0.0.1 can be rewritten via GNMI_LOCALHOST_REWRITE).
+          </p>
           <form class="mt-4 space-y-3" @submit.prevent="submitAddSwitch">
-            <input v-model="addSwitchForm.hostname" class="field" :disabled="!canWrite" placeholder="leaf-03" />
-            <input v-model="addSwitchForm.mgmtIp" class="field" :disabled="!canWrite" placeholder="10.0.10.13" />
+            <input v-model="addSwitchForm.hostname" class="field" :disabled="!canWrite" placeholder="Hostname (leaf-03)" />
+            <input v-model="addSwitchForm.mgmtIp" class="field" :disabled="!canWrite" placeholder="Management IP (192.168.215.1)" />
+            <input
+              v-model.number="addSwitchForm.mgmtPort"
+              class="field"
+              :disabled="!canWrite"
+              min="1"
+              max="65535"
+              placeholder="gNMI port"
+              type="number"
+            />
+            <label class="flex items-center gap-2 text-sm text-slate-300">
+              <input v-model="addSwitchForm.gnmiTls" class="rounded border-slate-600" :disabled="!canWrite" type="checkbox" />
+              Use TLS for gNMI (disable for insecure switches)
+            </label>
             <button class="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-40" :disabled="!canWrite" type="submit">
               Add switch
             </button>
           </form>
           <p v-if="!canWrite" class="mt-3 text-xs text-amber-200">Login is required for switch changes.</p>
+        </div>
+
+        <div v-if="canWrite" class="panel">
+          <div class="flex items-center justify-between">
+            <h2 class="section-title">Activity log</h2>
+            <button class="text-xs text-cyan-300 hover:text-cyan-100" type="button" @click="loadActivityLog">Refresh</button>
+          </div>
+          <div class="mt-4 max-h-80 space-y-2 overflow-y-auto">
+            <p v-if="activityLog.length === 0" class="text-sm text-slate-500">No activity yet.</p>
+            <article
+              v-for="entry in activityLog"
+              :key="entry.id"
+              class="rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs"
+            >
+              <div class="flex items-center justify-between gap-2">
+                <span class="font-semibold uppercase tracking-wide" :class="activityLevelClass(entry.level)">{{ entry.level }}</span>
+                <time class="text-slate-500">{{ formatActivityTime(entry.timestamp) }}</time>
+              </div>
+              <p class="mt-1 text-slate-300">{{ entry.category }} · {{ entry.message }}</p>
+              <p v-if="entry.details" class="mt-1 break-all text-slate-500">{{ entry.details }}</p>
+            </article>
+          </div>
         </div>
       </aside>
 
@@ -91,7 +133,12 @@
               <p class="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500">Selected switch</p>
               <h2 class="mt-1 text-2xl font-bold">{{ selectedSwitch?.hostname ?? "No switch selected" }}</h2>
               <p class="mt-1 text-sm text-slate-400">
-                {{ selectedSwitch?.mgmtIp ?? "Select a switch" }} · {{ selectedSwitch?.model ?? "unknown model" }}
+                <template v-if="selectedSwitch">
+                  {{ selectedSwitch.mgmtIp }}:{{ selectedSwitch.mgmtPort }}
+                  · {{ selectedSwitch.gnmiTls ? "TLS" : "insecure" }}
+                  · {{ selectedSwitch.model }}
+                </template>
+                <template v-else>Select a switch</template>
               </p>
             </div>
             <div class="grid grid-cols-3 gap-3 text-center text-sm">
@@ -291,11 +338,12 @@
 </template>
 
 <script lang="ts" setup>
-import type { InterfaceMode, NetworkInterface, RunningConfigDiffLine, Switch, VlanDefinition } from "~/domain";
+import type { ActivityLevel, InterfaceMode, NetworkInterface, RunningConfigDiffLine, Switch, VlanDefinition } from "~/domain";
 
 type WorkspaceTab = "status" | "config" | "running";
 
 const {
+  activityLog,
   addSwitch,
   applyRunningConfig,
   auth,
@@ -307,6 +355,7 @@ const {
   interfaceCache,
   interfaces,
   lastTelemetryAt,
+  loadActivityLog,
   loadRunningConfig,
   login,
   logout,
@@ -322,7 +371,7 @@ const {
 
 const showLogin = ref(false);
 const loginForm = reactive({ username: "", password: "" });
-const addSwitchForm = reactive({ hostname: "", mgmtIp: "" });
+const addSwitchForm = reactive({ hostname: "", mgmtIp: "", mgmtPort: 6031, gnmiTls: false });
 const activeTab = ref<WorkspaceTab>("status");
 const selectedPortNames = ref<string[]>([]);
 const primaryVlan = ref(20);
@@ -404,9 +453,33 @@ async function submitAddSwitch() {
   await addSwitch({
     hostname: addSwitchForm.hostname,
     mgmtIp: addSwitchForm.mgmtIp,
+    mgmtPort: addSwitchForm.mgmtPort,
+    gnmiTls: addSwitchForm.gnmiTls,
   });
   addSwitchForm.hostname = "";
   addSwitchForm.mgmtIp = "";
+  addSwitchForm.mgmtPort = 6031;
+  addSwitchForm.gnmiTls = false;
+}
+
+function activityLevelClass(level: ActivityLevel): string {
+  if (level === "error") {
+    return "text-red-300";
+  }
+
+  if (level === "warn") {
+    return "text-amber-300";
+  }
+
+  if (level === "success") {
+    return "text-emerald-300";
+  }
+
+  return "text-cyan-300";
+}
+
+function formatActivityTime(timestamp: string): string {
+  return new Date(timestamp).toLocaleString();
 }
 
 function activateProtectedTab(tab: WorkspaceTab) {

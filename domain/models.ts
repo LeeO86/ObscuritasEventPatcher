@@ -17,9 +17,22 @@ export interface Switch {
   id: string;
   hostname: string;
   mgmtIp: string;
+  mgmtPort: number;
+  gnmiTls: boolean;
   model: string;
   status: SwitchStatus;
   credentialState: CredentialState;
+}
+
+export type ActivityLevel = "info" | "warn" | "error" | "success";
+
+export interface ActivityLogEntry {
+  id: string;
+  timestamp: string;
+  level: ActivityLevel;
+  category: string;
+  message: string;
+  details?: string;
 }
 
 export interface SwitchCredentialMapping {
@@ -77,6 +90,8 @@ export interface NetworkInterface {
 export interface AddSwitchInput {
   hostname: string;
   mgmtIp: string;
+  mgmtPort: number;
+  gnmiTls: boolean;
 }
 
 export interface UpdateInterfaceInput {
