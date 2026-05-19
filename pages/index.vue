@@ -6,7 +6,7 @@
           <p class="text-sm font-semibold uppercase tracking-[0.35em] text-cyan-300">Arista gNMI Portal</p>
           <h1 class="mt-2 text-3xl font-bold tracking-tight">Obscuritas Event Patcher</h1>
           <p class="mt-2 max-w-3xl text-sm text-slate-300">
-            Read-only telemetry is open to everyone. Switch and interface changes require portal authentication.
+            Status is read-only. Port changes and running-config edits require the portal login.
           </p>
         </div>
 
@@ -14,16 +14,16 @@
           <span :class="connected ? 'bg-emerald-500/15 text-emerald-300' : 'bg-red-500/15 text-red-300'" class="rounded-full px-3 py-1 text-sm">
             {{ connected ? "Socket.IO connected" : "Disconnected" }}
           </span>
-          <span :class="auth.authenticated ? 'bg-cyan-500/15 text-cyan-200' : 'bg-amber-500/15 text-amber-200'" class="rounded-full px-3 py-1 text-sm">
-            {{ auth.authenticated ? `Logged in as ${auth.username}` : "Read-only session" }}
+          <span :class="canWrite ? 'bg-cyan-500/15 text-cyan-200' : 'bg-amber-500/15 text-amber-200'" class="rounded-full px-3 py-1 text-sm">
+            {{ canWrite ? `Logged in as ${auth.username}` : "Read-only session" }}
           </span>
-          <button v-if="auth.authenticated" class="btn-secondary" type="button" @click="logout">Logout</button>
+          <button v-if="canWrite" class="btn-secondary" type="button" @click="logout">Logout</button>
           <button v-else class="btn-primary" type="button" @click="showLogin = true">Login to edit</button>
         </div>
       </div>
     </section>
 
-    <section class="mx-auto grid max-w-7xl gap-6 px-6 py-6 xl:grid-cols-[320px_1fr]">
+    <section class="mx-auto grid max-w-7xl gap-6 px-6 py-6 xl:grid-cols-[340px_1fr]">
       <aside class="space-y-4">
         <div class="panel">
           <div class="flex items-center justify-between">
@@ -44,7 +44,22 @@
                 <span class="font-semibold">{{ networkSwitch.hostname }}</span>
                 <span class="status-pill" :data-status="networkSwitch.status">{{ networkSwitch.status }}</span>
               </div>
-              <p class="mt-1 text-sm text-slate-400">{{ networkSwitch.mgmtIp }}</p>
+              <p class="mt-1 text-sm text-slate-400">
+                {{ networkSwitch.mgmtIp }}:{{ networkSwitch.mgmtPort }}
+                · {{ networkSwitch.gnmiTls ? "TLS" : "insecure" }}
+                · {{ networkSwitch.model }}
+              </p>
+              <div class="mt-3 rounded-xl border border-slate-800 bg-slate-950/70 p-2">
+                <div v-for="(row, rowIndex) in layoutRows(networkSwitch)" :key="`${networkSwitch.id}-${rowIndex}`" class="flex gap-1">
+                  <span
+                    v-for="portName in row"
+                    :key="portName"
+                    class="mb-1 h-3 min-w-3 flex-1 rounded-sm border border-slate-700"
+                    :style="portStyle(interfaceFor(networkSwitch.id, portName))"
+                    :title="`${portName}: ${vlanLabel(interfaceFor(networkSwitch.id, portName))}`"
+                  />
+                </div>
+              </div>
               <p class="mt-2 text-xs uppercase tracking-wide text-slate-500">
                 credentials: {{ networkSwitch.credentialState }}
               </p>
@@ -54,140 +69,245 @@
 
         <div class="panel">
           <h2 class="section-title">Add switch</h2>
-          <p class="mt-2 text-sm text-slate-400">Uses shared credential combinations from environment variables.</p>
+          <p class="mt-2 text-sm text-slate-400">
+            Credentials come from SWITCH_USERNAMES / SWITCH_PASSWORDS. Use an IP reachable from this server
+            (in a devcontainer, 127.0.0.1 can be rewritten via GNMI_LOCALHOST_REWRITE).
+          </p>
           <form class="mt-4 space-y-3" @submit.prevent="submitAddSwitch">
-            <input v-model="addSwitchForm.hostname" class="field" :disabled="!canWrite" placeholder="leaf-03" />
-            <input v-model="addSwitchForm.mgmtIp" class="field" :disabled="!canWrite" placeholder="10.0.10.13" />
+            <input v-model="addSwitchForm.hostname" class="field" :disabled="!canWrite" placeholder="Hostname (leaf-03)" />
+            <input v-model="addSwitchForm.mgmtIp" class="field" :disabled="!canWrite" placeholder="Management IP (192.168.215.1)" />
+            <input
+              v-model.number="addSwitchForm.mgmtPort"
+              class="field"
+              :disabled="!canWrite"
+              min="1"
+              max="65535"
+              placeholder="gNMI port"
+              type="number"
+            />
+            <label class="flex items-center gap-2 text-sm text-slate-300">
+              <input v-model="addSwitchForm.gnmiTls" class="rounded border-slate-600" :disabled="!canWrite" type="checkbox" />
+              Use TLS for gNMI (disable for insecure switches)
+            </label>
             <button class="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-40" :disabled="!canWrite" type="submit">
               Add switch
             </button>
           </form>
-          <p v-if="!canWrite" class="mt-3 text-xs text-amber-200">Login is required for write actions.</p>
+          <p v-if="!canWrite" class="mt-3 text-xs text-amber-200">Login is required for switch changes.</p>
+        </div>
+
+        <div v-if="canWrite" class="panel">
+          <div class="flex items-center justify-between">
+            <h2 class="section-title">Activity log</h2>
+            <button class="text-xs text-cyan-300 hover:text-cyan-100" type="button" @click="loadActivityLog">Refresh</button>
+          </div>
+          <div class="mt-4 max-h-80 space-y-2 overflow-y-auto">
+            <p v-if="activityLog.length === 0" class="text-sm text-slate-500">No activity yet.</p>
+            <article
+              v-for="entry in activityLog"
+              :key="entry.id"
+              class="rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs"
+            >
+              <div class="flex items-center justify-between gap-2">
+                <span class="font-semibold uppercase tracking-wide" :class="activityLevelClass(entry.level)">{{ entry.level }}</span>
+                <time class="text-slate-500">{{ formatActivityTime(entry.timestamp) }}</time>
+              </div>
+              <p class="mt-1 text-slate-300">{{ entry.category }} · {{ entry.message }}</p>
+              <p v-if="entry.details" class="mt-1 break-all text-slate-500">{{ entry.details }}</p>
+            </article>
+          </div>
         </div>
       </aside>
 
       <div class="space-y-6">
-        <section class="grid gap-4 lg:grid-cols-4">
-          <div class="metric-card">
-            <span>Selected switch</span>
-            <strong>{{ selectedSwitch?.hostname ?? "None" }}</strong>
+        <div v-if="adminWarnings.length" class="rounded-3xl border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-100">
+          <p class="font-semibold">Configuration warning</p>
+          <ul class="mt-2 list-disc space-y-1 pl-5">
+            <li v-for="warning in adminWarnings" :key="warning">{{ warning }}</li>
+          </ul>
+        </div>
+
+        <section class="panel">
+          <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500">Selected switch</p>
+              <h2 class="mt-1 text-2xl font-bold">{{ selectedSwitch?.hostname ?? "No switch selected" }}</h2>
+              <p class="mt-1 text-sm text-slate-400">
+                <template v-if="selectedSwitch">
+                  {{ selectedSwitch.mgmtIp }}:{{ selectedSwitch.mgmtPort }}
+                  · {{ selectedSwitch.gnmiTls ? "TLS" : "insecure" }}
+                  · {{ selectedSwitch.model }}
+                </template>
+                <template v-else>Select a switch</template>
+              </p>
+            </div>
+            <div class="grid grid-cols-3 gap-3 text-center text-sm">
+              <div class="rounded-2xl bg-slate-950 px-4 py-3">
+                <div class="text-slate-500">Ports up</div>
+                <div class="text-xl font-bold">{{ portsUp }}/{{ interfaces.length }}</div>
+              </div>
+              <div class="rounded-2xl bg-slate-950 px-4 py-3">
+                <div class="text-slate-500">VLANs</div>
+                <div class="text-xl font-bold">{{ vlans.length }}</div>
+              </div>
+              <div class="rounded-2xl bg-slate-950 px-4 py-3">
+                <div class="text-slate-500">Telemetry</div>
+                <div class="text-xl font-bold">{{ lastTelemetryAt ? new Date(lastTelemetryAt).toLocaleTimeString() : "waiting" }}</div>
+              </div>
+            </div>
           </div>
-          <div class="metric-card">
-            <span>Ports up</span>
-            <strong>{{ portsUp }}/{{ interfaces.length }}</strong>
+
+          <div class="mt-5 rounded-3xl border border-slate-800 bg-slate-950/70 p-4">
+            <div v-for="(row, rowIndex) in selectedLayoutRows" :key="`selected-${rowIndex}`" class="flex gap-2">
+              <button
+                v-for="portName in row"
+                :key="portName"
+                class="mb-2 min-h-12 min-w-12 flex-1 rounded-xl border px-2 py-2 text-xs font-bold text-slate-950 shadow-inner transition hover:scale-[1.02]"
+                :class="isPortSelected(portName) ? 'ring-2 ring-cyan-300' : 'ring-0'"
+                :style="portStyle(interfaceFor(selectedSwitchId, portName))"
+                type="button"
+                @click="togglePort(portName)"
+              >
+                <span class="block">{{ shortPortName(portName) }}</span>
+                <span class="mt-1 block text-[10px] font-semibold opacity-80">{{ vlanShortLabel(interfaceFor(selectedSwitchId, portName)) }}</span>
+              </button>
+            </div>
           </div>
-          <div class="metric-card">
-            <span>LLDP neighbors</span>
-            <strong>{{ discovery?.neighbors.length ?? 0 }}</strong>
-          </div>
-          <div class="metric-card">
-            <span>Last telemetry</span>
-            <strong>{{ lastTelemetryAt ? new Date(lastTelemetryAt).toLocaleTimeString() : "waiting" }}</strong>
-          </div>
+          <p class="mt-3 text-xs text-slate-500">
+            Access ports use their VLAN color. Trunks use a gradient from their allowed VLANs.
+          </p>
         </section>
 
         <section class="panel">
-          <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 class="section-title">Interface dashboard</h2>
-              <p class="mt-1 text-sm text-slate-400">Live status, counters, optics, VLANs, and LLDP neighbors.</p>
+          <div class="flex flex-wrap gap-2">
+            <button class="tab-button" :class="activeTab === 'status' ? 'tab-button-active' : ''" type="button" @click="activeTab = 'status'">
+              Status
+            </button>
+            <button class="tab-button" :class="activeTab === 'config' ? 'tab-button-active' : 'opacity-50'" type="button" @click="activateProtectedTab('config')">
+              Config
+            </button>
+            <button class="tab-button" :class="activeTab === 'running' ? 'tab-button-active' : 'opacity-50'" type="button" @click="activateProtectedTab('running')">
+              Running config
+            </button>
+          </div>
+
+          <div v-if="activeTab === 'status'" class="mt-5 space-y-5">
+            <div class="grid gap-4 lg:grid-cols-[1fr_320px]">
+              <div class="overflow-hidden rounded-2xl border border-slate-800">
+                <table class="w-full min-w-[780px] text-left text-sm">
+                  <thead class="bg-slate-900 text-xs uppercase tracking-wide text-slate-400">
+                    <tr>
+                      <th class="px-4 py-3">Port</th>
+                      <th class="px-4 py-3">Status</th>
+                      <th class="px-4 py-3">Speed</th>
+                      <th class="px-4 py-3">Assigned VLAN</th>
+                      <th class="px-4 py-3">Optics</th>
+                      <th class="px-4 py-3">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-800">
+                    <tr v-for="networkInterface in interfaces" :key="networkInterface.name" class="bg-slate-950/40">
+                      <td class="px-4 py-3 font-semibold">{{ networkInterface.name }}</td>
+                      <td class="px-4 py-3">
+                        <span class="status-pill" :data-status="networkInterface.status">{{ networkInterface.status }}</span>
+                      </td>
+                      <td class="px-4 py-3">{{ networkInterface.speed }}</td>
+                      <td class="px-4 py-3">{{ vlanLabel(networkInterface) }}</td>
+                      <td class="px-4 py-3">
+                        <span v-if="networkInterface.media === 'sfp'">
+                          Rx {{ formatPower(networkInterface.optics.rxPowerDbm) }} / Tx {{ formatPower(networkInterface.optics.txPowerDbm) }}
+                        </span>
+                        <span v-else class="text-slate-500">copper</span>
+                      </td>
+                      <td class="px-4 py-3 text-slate-300">{{ networkInterface.description }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
+                <h3 class="font-bold">VLAN inventory</h3>
+                <div class="mt-3 space-y-2">
+                  <div v-for="vlan in vlans" :key="vlan.id" class="flex items-center gap-3 rounded-xl bg-slate-900 p-2">
+                    <span class="h-4 w-4 rounded" :style="{ background: vlanColor(vlan.id) }" />
+                    <span class="font-semibold">VLAN {{ vlan.id }}</span>
+                    <span class="text-sm text-slate-400">{{ vlan.description }}</span>
+                  </div>
+                </div>
+              </div>
             </div>
-            <button class="btn-secondary" type="button" @click="selectedSwitchId && selectSwitch(selectedSwitchId)">Refresh</button>
           </div>
 
-          <div class="mt-5 overflow-hidden rounded-2xl border border-slate-800">
-            <table class="w-full min-w-[760px] text-left text-sm">
-              <thead class="bg-slate-900 text-xs uppercase tracking-wide text-slate-400">
-                <tr>
-                  <th class="px-4 py-3">Port</th>
-                  <th class="px-4 py-3">Mode</th>
-                  <th class="px-4 py-3">VLANs</th>
-                  <th class="px-4 py-3">Status</th>
-                  <th class="px-4 py-3">Counters</th>
-                  <th class="px-4 py-3">Optics</th>
-                  <th class="px-4 py-3">LLDP</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-800">
-                <tr
-                  v-for="networkInterface in interfaces"
-                  :key="networkInterface.name"
-                  class="cursor-pointer bg-slate-950/40 hover:bg-slate-900"
-                  :class="networkInterface.name === selectedInterfaceName ? 'outline outline-1 outline-cyan-400' : ''"
-                  @click="selectInterface(networkInterface.name)"
-                >
-                  <td class="px-4 py-3">
-                    <div class="font-semibold">{{ networkInterface.name }}</div>
-                    <div class="text-xs text-slate-500">{{ networkInterface.description }}</div>
-                  </td>
-                  <td class="px-4 py-3 uppercase">{{ networkInterface.mode }}</td>
-                  <td class="px-4 py-3">{{ vlanLabel(networkInterface) }}</td>
-                  <td class="px-4 py-3">
-                    <span class="status-pill" :data-status="networkInterface.status">{{ networkInterface.status }}</span>
-                  </td>
-                  <td class="px-4 py-3 text-slate-300">
-                    {{ compactNumber(networkInterface.counters.inOctets) }} in /
-                    {{ compactNumber(networkInterface.counters.outOctets) }} out
-                  </td>
-                  <td class="px-4 py-3 text-slate-300">
-                    Rx {{ formatPower(networkInterface.optics.rxPowerDbm) }} /
-                    Tx {{ formatPower(networkInterface.optics.txPowerDbm) }}
-                  </td>
-                  <td class="px-4 py-3 text-slate-300">
-                    {{ networkInterface.lldp[0]?.systemName ?? "none" }}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
+          <div v-else-if="activeTab === 'config'" class="mt-5">
+            <div class="mb-4 flex flex-wrap items-center gap-3">
+              <span class="text-sm text-slate-400">{{ selectedPortNames.length }} ports selected from the switch display</span>
+              <button class="btn-secondary" type="button" @click="selectAllPorts">Select all</button>
+              <button class="btn-secondary" type="button" @click="selectedPortNames = []">Clear</button>
+            </div>
 
-        <section class="grid gap-6 lg:grid-cols-[1fr_360px]">
-          <div class="panel">
-            <h2 class="section-title">Port configuration</h2>
-            <p class="mt-1 text-sm text-slate-400">Writes are sent over Socket.IO and blocked server-side unless logged in.</p>
-
-            <form v-if="selectedInterface" class="mt-5 grid gap-4 md:grid-cols-2" @submit.prevent="saveInterface">
-              <label class="space-y-2">
-                <span class="label">Interface</span>
-                <input class="field" :value="selectedInterface.name" disabled />
-              </label>
-              <label class="space-y-2">
-                <span class="label">Description</span>
-                <input v-model="configForm.description" class="field" :disabled="!canWrite" />
-              </label>
+            <form class="grid gap-4 md:grid-cols-2" @submit.prevent="saveBulkConfiguration">
               <label class="space-y-2">
                 <span class="label">Mode</span>
-                <select v-model="configForm.mode" class="field" :disabled="!canWrite">
+                <select v-model="configForm.mode" class="field">
                   <option value="access">Access</option>
                   <option value="trunk">Trunk</option>
                 </select>
               </label>
               <label class="space-y-2">
-                <span class="label">{{ configForm.mode === "access" ? "Access VLAN" : "Native VLAN" }}</span>
-                <input v-model.number="primaryVlan" class="field" min="1" max="4094" type="number" :disabled="!canWrite" />
+                <span class="label">Port speed</span>
+                <select v-model="configForm.speed" class="field">
+                  <option v-for="speed in speedOptions" :key="speed" :value="speed">{{ speed }}</option>
+                </select>
               </label>
-              <label v-if="configForm.mode === 'trunk'" class="space-y-2 md:col-span-2">
+              <label class="space-y-2">
+                <span class="label">{{ configForm.mode === "access" ? "Access VLAN" : "Native VLAN" }}</span>
+                <select v-model.number="primaryVlan" class="field">
+                  <option v-for="vlan in vlanOptions" :key="vlan.id" :value="vlan.id">
+                    VLAN {{ vlan.id }} - {{ vlan.description }}
+                  </option>
+                </select>
+              </label>
+              <label v-if="configForm.mode === 'trunk'" class="space-y-2">
                 <span class="label">Allowed VLANs</span>
-                <input v-model="configForm.allowedVlans" class="field" :disabled="!canWrite" placeholder="10,20,30" />
+                <select v-model="selectedAllowedVlans" class="field min-h-32" multiple>
+                  <option v-for="vlan in vlanOptions" :key="vlan.id" :value="vlan.id">
+                    VLAN {{ vlan.id }} - {{ vlan.description }}
+                  </option>
+                </select>
+                <p class="text-xs text-slate-500">Hold Ctrl or Shift to select multiple allowed VLANs.</p>
+              </label>
+              <label class="space-y-2 md:col-span-2">
+                <span class="label">Description template</span>
+                <input v-model="configForm.descriptionTemplate" class="field" placeholder="Desk {1} counts up across selected ports" />
               </label>
               <div class="md:col-span-2">
-                <button class="btn-primary disabled:cursor-not-allowed disabled:opacity-40" :disabled="!canWrite" type="submit">
-                  Apply configuration
+                <button class="btn-primary disabled:cursor-not-allowed disabled:opacity-40" :disabled="!selectedPortNames.length" type="submit">
+                  Apply to selected ports
                 </button>
               </div>
             </form>
           </div>
 
-          <div class="panel">
-            <h2 class="section-title">LLDP discovery</h2>
-            <div class="mt-4 space-y-3">
-              <div v-for="neighbor in discovery?.neighbors" :key="`${neighbor.systemName}-${neighbor.portId}`" class="rounded-2xl border border-slate-800 bg-slate-900 p-4">
-                <div class="font-semibold">{{ neighbor.systemName }}</div>
-                <div class="text-sm text-slate-400">{{ neighbor.portId }} · {{ neighbor.chassisId }}</div>
-                <div class="mt-2 text-xs text-cyan-200">candidate {{ neighbor.candidateMgmtIp }}</div>
-              </div>
-              <p v-if="!discovery?.neighbors.length" class="text-sm text-slate-400">No neighbors found on selected switch.</p>
+          <div v-else class="mt-5 space-y-4">
+            <div class="flex flex-wrap items-center gap-3">
+              <button class="btn-secondary" type="button" @click="loadRunningConfigForSelected">Reload running config</button>
+              <button class="btn-secondary" type="button" @click="showConfigDiff">Show diff</button>
+              <button class="btn-primary disabled:cursor-not-allowed disabled:opacity-40" :disabled="!runningConfigDiff" type="button" @click="applyConfig">
+                Apply displayed diff
+              </button>
+            </div>
+            <p v-if="runningConfig?.warning" class="rounded-2xl border border-amber-400/40 bg-amber-500/10 p-3 text-sm text-amber-100">
+              {{ runningConfig.warning }}
+            </p>
+            <textarea v-model="runningConfigDraft" class="field min-h-[360px] font-mono text-xs" spellcheck="false" />
+            <div v-if="runningConfigDiff" class="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+              <h3 class="font-bold">Pending diff</h3>
+              <pre class="mt-3 max-h-80 overflow-auto text-xs"><span
+                v-for="(line, index) in runningConfigDiff.diffLines"
+                :key="index"
+                :class="diffClass(line.type)"
+              >{{ diffPrefix(line.type) }}{{ line.text }}
+</span></pre>
             </div>
           </div>
         </section>
@@ -218,54 +338,104 @@
 </template>
 
 <script lang="ts" setup>
-import type { InterfaceMode, NetworkInterface } from "~/domain";
+import type { ActivityLevel, InterfaceMode, NetworkInterface, RunningConfigDiffLine, Switch, VlanDefinition } from "~/domain";
+
+type WorkspaceTab = "status" | "config" | "running";
 
 const {
+  activityLog,
   addSwitch,
+  applyRunningConfig,
   auth,
+  bulkUpdateInterfaces,
   connect,
   connected,
-  discovery,
+  diffRunningConfig,
   error,
+  interfaceCache,
   interfaces,
   lastTelemetryAt,
+  loadActivityLog,
+  loadRunningConfig,
   login,
   logout,
+  runningConfig,
+  runningConfigDiff,
   selectSwitch,
   selectedSwitch,
   selectedSwitchId,
   switches,
-  updateInterface,
+  uiConfig,
+  vlans,
 } = useRealtimeNetwork();
 
 const showLogin = ref(false);
 const loginForm = reactive({ username: "", password: "" });
-const addSwitchForm = reactive({ hostname: "", mgmtIp: "" });
-const selectedInterfaceName = ref("");
-const primaryVlan = ref(1);
+const addSwitchForm = reactive({ hostname: "", mgmtIp: "", mgmtPort: 6031, gnmiTls: false });
+const activeTab = ref<WorkspaceTab>("status");
+const selectedPortNames = ref<string[]>([]);
+const primaryVlan = ref(20);
+const selectedAllowedVlans = ref<number[]>([10, 20, 30]);
+const runningConfigDraft = ref("");
+const speedOptions = ["auto", "100M", "1G", "10G", "25G", "40G", "100G"];
 const configForm = reactive({
-  description: "",
+  descriptionTemplate: "",
   mode: "access" as InterfaceMode,
-  allowedVlans: "",
+  speed: "auto",
 });
 
 const canWrite = computed(() => auth.value.authenticated);
 const portsUp = computed(() => interfaces.value.filter((networkInterface) => networkInterface.status === "up").length);
-const selectedInterface = computed(() =>
-  interfaces.value.find((networkInterface) => networkInterface.name === selectedInterfaceName.value),
-);
+const adminWarnings = computed(() => [
+  ...(uiConfig.value?.errors ?? []),
+  ...(selectedSwitchIssue.value ? [selectedSwitchIssue.value] : []),
+]);
+const selectedSwitchIssue = computed(() => {
+  if (!selectedSwitch.value) {
+    return undefined;
+  }
 
-watch(
-  interfaces,
-  (currentInterfaces) => {
-    if (!selectedInterfaceName.value || !currentInterfaces.some((networkInterface) => networkInterface.name === selectedInterfaceName.value)) {
-      selectedInterfaceName.value = currentInterfaces[0]?.name ?? "";
-      syncInterfaceForm();
-    }
-  },
-);
+  if (selectedSwitch.value.status === "offline" || selectedSwitch.value.credentialState === "invalid") {
+    return `No connection to ${selectedSwitch.value.hostname}. Please contact your administrator.`;
+  }
 
-watch(selectedInterfaceName, syncInterfaceForm);
+  return undefined;
+});
+const selectedLayoutRows = computed(() => selectedSwitch.value ? layoutRows(selectedSwitch.value) : []);
+const vlanOptions = computed<VlanDefinition[]>(() => {
+  if (vlans.value.length > 0) {
+    return vlans.value;
+  }
+
+  return Object.keys(uiConfig.value?.vlanColors ?? {})
+    .map((vlanId) => Number(vlanId))
+    .filter((vlanId) => Number.isInteger(vlanId))
+    .sort((left, right) => left - right)
+    .map((id) => ({ id, description: `VLAN ${id}` }));
+});
+
+watch(runningConfig, (document) => {
+  runningConfigDraft.value = document?.content ?? "";
+});
+
+watch(vlanOptions, (options) => {
+  if (options.length === 0) {
+    return;
+  }
+
+  if (!options.some((vlan) => vlan.id === primaryVlan.value)) {
+    primaryVlan.value = options[0].id;
+  }
+
+  selectedAllowedVlans.value = selectedAllowedVlans.value.filter((vlanId) =>
+    options.some((vlan) => vlan.id === vlanId),
+  );
+}, { immediate: true });
+
+watch(selectedSwitchId, () => {
+  selectedPortNames.value = [];
+  activeTab.value = "status";
+});
 
 onMounted(() => {
   connect();
@@ -283,71 +453,214 @@ async function submitAddSwitch() {
   await addSwitch({
     hostname: addSwitchForm.hostname,
     mgmtIp: addSwitchForm.mgmtIp,
+    mgmtPort: addSwitchForm.mgmtPort,
+    gnmiTls: addSwitchForm.gnmiTls,
   });
   addSwitchForm.hostname = "";
   addSwitchForm.mgmtIp = "";
+  addSwitchForm.mgmtPort = 6031;
+  addSwitchForm.gnmiTls = false;
 }
 
-async function saveInterface() {
-  const networkInterface = selectedInterface.value;
-  const switchId = selectedSwitchId.value;
+function activityLevelClass(level: ActivityLevel): string {
+  if (level === "error") {
+    return "text-red-300";
+  }
 
-  if (!networkInterface || !switchId) {
+  if (level === "warn") {
+    return "text-amber-300";
+  }
+
+  if (level === "success") {
+    return "text-emerald-300";
+  }
+
+  return "text-cyan-300";
+}
+
+function formatActivityTime(timestamp: string): string {
+  return new Date(timestamp).toLocaleString();
+}
+
+function activateProtectedTab(tab: WorkspaceTab) {
+  if (!canWrite.value) {
+    showLogin.value = true;
     return;
   }
 
-  await updateInterface({
+  activeTab.value = tab;
+  if (tab === "running") {
+    void loadRunningConfigForSelected();
+  }
+}
+
+async function saveBulkConfiguration() {
+  const switchId = selectedSwitchId.value;
+
+  if (!switchId || selectedPortNames.value.length === 0) {
+    return;
+  }
+
+  await bulkUpdateInterfaces({
     switchId,
-    name: networkInterface.name,
-    description: configForm.description,
+    names: selectedPortNames.value,
+    descriptionTemplate: configForm.descriptionTemplate || undefined,
     mode: configForm.mode,
-    vlan:
-      configForm.mode === "access"
-        ? { accessVlan: primaryVlan.value, allowedVlans: [] }
-        : {
-            nativeVlan: primaryVlan.value,
-            allowedVlans: parseVlans(configForm.allowedVlans),
-          },
+    speed: configForm.speed,
+    vlan: configForm.mode === "access"
+      ? { accessVlan: primaryVlan.value, allowedVlans: [] }
+      : { nativeVlan: primaryVlan.value, allowedVlans: selectedAllowedVlans.value },
   });
 }
 
-function selectInterface(name: string) {
-  selectedInterfaceName.value = name;
+async function loadRunningConfigForSelected() {
+  if (selectedSwitchId.value) {
+    await loadRunningConfig(selectedSwitchId.value);
+  }
 }
 
-function syncInterfaceForm() {
-  const networkInterface = selectedInterface.value;
+async function showConfigDiff() {
+  if (selectedSwitchId.value) {
+    await diffRunningConfig({ switchId: selectedSwitchId.value, content: runningConfigDraft.value });
+  }
+}
 
-  if (!networkInterface) {
+async function applyConfig() {
+  if (selectedSwitchId.value && runningConfigDiff.value) {
+    await applyRunningConfig({ switchId: selectedSwitchId.value, content: runningConfigDraft.value });
+  }
+}
+
+function togglePort(portName: string) {
+  if (activeTab.value !== "config") {
+    selectedPortNames.value = [portName];
     return;
   }
 
-  configForm.description = networkInterface.description;
-  configForm.mode = networkInterface.mode;
-  primaryVlan.value = networkInterface.mode === "access" ? networkInterface.vlan.accessVlan ?? 1 : networkInterface.vlan.nativeVlan ?? 1;
-  configForm.allowedVlans = networkInterface.vlan.allowedVlans.join(",");
+  if (selectedPortNames.value.includes(portName)) {
+    selectedPortNames.value = selectedPortNames.value.filter((name) => name !== portName);
+  } else {
+    selectedPortNames.value = [...selectedPortNames.value, portName];
+  }
 }
 
-function vlanLabel(networkInterface: NetworkInterface): string {
-  if (networkInterface.mode === "access") {
-    return `access ${networkInterface.vlan.accessVlan ?? "unset"}`;
+function selectAllPorts() {
+  selectedPortNames.value = interfaces.value.map((networkInterface) => networkInterface.name);
+}
+
+function isPortSelected(portName: string): boolean {
+  return selectedPortNames.value.includes(portName);
+}
+
+function layoutRows(networkSwitch: Switch): string[][] {
+  const configuredRows = uiConfig.value?.switchLayouts[networkSwitch.model]?.rows;
+
+  if (configuredRows?.length) {
+    return addExtraPorts(configuredRows, cachedInterfaces(networkSwitch.id));
   }
 
-  return `native ${networkInterface.vlan.nativeVlan ?? 1}; allowed ${networkInterface.vlan.allowedVlans.join(", ")}`;
+  return fallbackRows(cachedInterfaces(networkSwitch.id).map((networkInterface) => networkInterface.name));
 }
 
-function parseVlans(value: string): number[] {
-  return value
-    .split(",")
-    .map((entry) => Number(entry.trim()))
-    .filter((entry) => Number.isInteger(entry) && entry > 0 && entry <= 4094);
+function addExtraPorts(rows: string[][], cachedPorts: NetworkInterface[]): string[][] {
+  const knownPorts = new Set(rows.flat());
+  const extraPorts = cachedPorts.map((port) => port.name).filter((name) => !knownPorts.has(name));
+  return extraPorts.length ? [...rows, extraPorts] : rows;
 }
 
-function compactNumber(value: number): string {
-  return Intl.NumberFormat(undefined, { notation: "compact" }).format(value);
+function fallbackRows(portNames: string[]): string[][] {
+  const sortedPorts = [...portNames].sort((left, right) => portNumber(left) - portNumber(right));
+  return [
+    sortedPorts.filter((_port, index) => index % 2 === 0),
+    sortedPorts.filter((_port, index) => index % 2 === 1),
+  ];
+}
+
+function cachedInterfaces(switchId: string | undefined): NetworkInterface[] {
+  return switchId ? interfaceCache.value[switchId] ?? [] : [];
+}
+
+function interfaceFor(switchId: string | undefined, portName: string): NetworkInterface | undefined {
+  return cachedInterfaces(switchId).find((networkInterface) => networkInterface.name === portName);
+}
+
+function portStyle(networkInterface: NetworkInterface | undefined): Record<string, string> {
+  if (!networkInterface) {
+    return { background: "#1e293b", borderColor: "#334155", color: "#94a3b8" };
+  }
+
+  const background = networkInterface.mode === "trunk"
+    ? trunkGradient(networkInterface)
+    : vlanColor(networkInterface.vlan.accessVlan ?? 1);
+
+  return {
+    background,
+    borderColor: networkInterface.status === "up" ? "#a7f3d0" : "#475569",
+    color: "#020617",
+  };
+}
+
+function trunkGradient(networkInterface: NetworkInterface): string {
+  const vlanIds = networkInterface.vlan.allowedVlans.length
+    ? networkInterface.vlan.allowedVlans
+    : [networkInterface.vlan.nativeVlan ?? 1];
+  const colors = vlanIds.map((vlanId) => vlanColor(vlanId));
+
+  if (colors.length === 1) {
+    return colors[0];
+  }
+
+  return `linear-gradient(135deg, ${colors.map((color, index) => `${color} ${(index / colors.length) * 100}% ${((index + 1) / colors.length) * 100}%`).join(", ")})`;
+}
+
+function vlanColor(vlanId: number): string {
+  return uiConfig.value?.vlanColors[String(vlanId)] ?? "#64748b";
+}
+
+function vlanLabel(networkInterface: NetworkInterface | undefined): string {
+  if (!networkInterface) {
+    return "no data";
+  }
+
+  if (networkInterface.mode === "access") {
+    const vlanId = networkInterface.vlan.accessVlan ?? 1;
+    return `access ${vlanId} (${vlanDescription(vlanId)})`;
+  }
+
+  return `trunk native ${networkInterface.vlan.nativeVlan ?? 1}; allowed ${networkInterface.vlan.allowedVlans.join(", ") || "none"}`;
+}
+
+function vlanShortLabel(networkInterface: NetworkInterface | undefined): string {
+  if (!networkInterface) {
+    return "-";
+  }
+
+  return networkInterface.mode === "access"
+    ? `V${networkInterface.vlan.accessVlan ?? 1}`
+    : "trunk";
+}
+
+function vlanDescription(vlanId: number): string {
+  return vlans.value.find((vlan) => vlan.id === vlanId)?.description ?? "unknown";
+}
+
+function shortPortName(portName: string): string {
+  return portName.replace("Ethernet", "E");
+}
+
+function portNumber(name: string): number {
+  return Number(name.match(/\d+/)?.[0] ?? Number.MAX_SAFE_INTEGER);
 }
 
 function formatPower(value: number | null): string {
   return value === null ? "n/a" : `${value.toFixed(1)} dBm`;
+}
+
+function diffPrefix(type: RunningConfigDiffLine["type"]): string {
+  return type === "add" ? "+ " : type === "remove" ? "- " : "  ";
+}
+
+function diffClass(type: RunningConfigDiffLine["type"]): string {
+  return type === "add" ? "block text-emerald-300" : type === "remove" ? "block text-red-300" : "block text-slate-400";
 }
 </script>

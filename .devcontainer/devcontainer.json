@@ -3,7 +3,9 @@
   "build": {
     "dockerfile": "Dockerfile"
   },
-  "postCreateCommand": "npm ci",
+  "remoteUser": "node",
+  "postCreateCommand": "git submodule update --init --recursive && npm ci",
+  "forwardPorts": [3000],
   "customizations": {
     "vscode": {
       "extensions": [

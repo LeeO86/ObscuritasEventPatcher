@@ -1,0 +1,74 @@
+{
+  "vlanColors": {
+    "1": "#64748b",
+    "10": "#22d3ee",
+    "20": "#a78bfa",
+    "30": "#34d399",
+    "40": "#f59e0b",
+    "50": "#fb7185",
+    "100": "#60a5fa"
+  },
+  "switchLayouts": {
+    "arista-720xp": {
+      "model": "arista-720xp",
+      "rows": [
+        [
+          "Ethernet1",
+          "Ethernet3",
+          "Ethernet5",
+          "Ethernet7",
+          "Ethernet9",
+          "Ethernet11",
+          "Ethernet13",
+          "Ethernet15",
+          "Ethernet17",
+          "Ethernet19",
+          "Ethernet21",
+          "Ethernet23",
+          "Ethernet25",
+          "Ethernet27",
+          "Ethernet29",
+          "Ethernet31",
+          "Ethernet33",
+          "Ethernet35",
+          "Ethernet37",
+          "Ethernet39",
+          "Ethernet41",
+          "Ethernet43",
+          "Ethernet45",
+          "Ethernet47",
+          "Ethernet49",
+          "Ethernet51"
+        ],
+        [
+          "Ethernet2",
+          "Ethernet4",
+          "Ethernet6",
+          "Ethernet8",
+          "Ethernet10",
+          "Ethernet12",
+          "Ethernet14",
+          "Ethernet16",
+          "Ethernet18",
+          "Ethernet20",
+          "Ethernet22",
+          "Ethernet24",
+          "Ethernet26",
+          "Ethernet28",
+          "Ethernet30",
+          "Ethernet32",
+          "Ethernet34",
+          "Ethernet36",
+          "Ethernet38",
+          "Ethernet40",
+          "Ethernet42",
+          "Ethernet44",
+          "Ethernet46",
+          "Ethernet48",
+          "Ethernet50",
+          "Ethernet52"
+        ]
+      ]
+    }
+  }
+}

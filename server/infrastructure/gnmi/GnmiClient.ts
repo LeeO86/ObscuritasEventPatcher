@@ -5,6 +5,7 @@ import {
   type ServiceError,
 } from "@grpc/grpc-js";
 import {
+  CapabilityRequest,
   gNMIClient,
   type CapabilityResponse,
   type GetRequest,
@@ -41,7 +42,7 @@ export interface GnmiClientService {
 export class GrpcGnmiClient implements GnmiClientService {
   async capabilities(target: GnmiTarget, credential: GnmiCredential): Promise<CapabilityResponse> {
     return this.withRetry(() =>
-      this.unaryCall<unknown, CapabilityResponse>(target, credential, "capabilities", {}),
+      this.unaryCall(target, credential, "capabilities", CapabilityRequest.create()),
     );
   }
 
