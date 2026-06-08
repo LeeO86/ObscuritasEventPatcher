@@ -10,11 +10,6 @@ dist
 # Node dependencies
 node_modules
 
-# Python build/test artifacts
-__pycache__
-*.py[cod]
-*.egg-info
-
 # Logs
 logs
 *.log
