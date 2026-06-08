@@ -65,7 +65,7 @@ class DaemonState:
     receivers: tuple[DaemonStream, ...] = field(default_factory=tuple)
 
     @classmethod
-    def from_streams_payload(cls, payload: dict[str, Any]) -> DaemonState:
+    def from_streams_payload(cls, payload: dict[str, Any]) -> "DaemonState":
         return cls(
             senders=tuple(
                 DaemonStream("sender", int(source["id"]), dict(source))

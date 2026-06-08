@@ -76,13 +76,7 @@ class Reconciler:
             desired_payload = self._payload_for(side, desired_stream)
             if existing_stream is None:
                 operations.append(
-                    PlannedOperation(
-                        "create",
-                        side,
-                        daemon_id,
-                        "configured stream missing",
-                        desired_payload,
-                    )
+                    PlannedOperation("create", side, daemon_id, "configured stream missing", desired_payload)
                 )
                 continue
 
@@ -100,13 +94,7 @@ class Reconciler:
 
             if _payload_drifted(existing_stream.payload, desired_payload):
                 operations.append(
-                    PlannedOperation(
-                        "update",
-                        side,
-                        daemon_id,
-                        "daemon stream drifted",
-                        desired_payload,
-                    )
+                    PlannedOperation("update", side, daemon_id, "daemon stream drifted", desired_payload)
                 )
 
         for daemon_id, existing_stream in existing.items():
@@ -118,12 +106,7 @@ class Reconciler:
                 and (ownership.nmos_id not in desired_nmos_ids or daemon_id not in desired)
             ):
                 operations.append(
-                    PlannedOperation(
-                        "delete",
-                        side,
-                        daemon_id,
-                        "managed stream not in bridge config",
-                    )
+                    PlannedOperation("delete", side, daemon_id, "managed stream not in bridge config")
                 )
 
         return tuple(operations)
