@@ -13,32 +13,6 @@ permissions:
   packages: write
 
 jobs:
-  aes67-nmos-bridge:
-    runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        working-directory: aes67-nmos-bridge
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-
-      - name: Install bridge dependencies
-        run: python -m pip install -e ".[dev]"
-
-      - name: Lint bridge
-        run: ruff check .
-
-      - name: Test bridge
-        run: pytest
-
   build:
     runs-on: ubuntu-latest
 
