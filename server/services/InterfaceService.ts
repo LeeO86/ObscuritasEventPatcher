@@ -1,4 +1,4 @@
-import type { NetworkInterface, UpdateInterfaceInput } from "~/domain";
+import type { BulkUpdateInterfaceInput, NetworkInterface, UpdateInterfaceInput } from "~/domain";
 
 export class InterfaceService {
   private readonly interfaces = new Map<string, NetworkInterface[]>([
@@ -11,6 +11,8 @@ export class InterfaceService {
           description: "Uplink to spine-01",
           mode: "trunk",
           vlan: { nativeVlan: 1, allowedVlans: [10, 20, 30, 100] },
+          speed: "25G",
+          media: "sfp",
           status: "up",
           counters: { inOctets: 1849203301, outOctets: 2039211440, inErrors: 0, outErrors: 0 },
           optics: { rxPowerDbm: -2.1, txPowerDbm: -1.7 },
@@ -22,6 +24,8 @@ export class InterfaceService {
           description: "Workstation access",
           mode: "access",
           vlan: { accessVlan: 20, allowedVlans: [] },
+          speed: "1G",
+          media: "copper",
           status: "down",
           counters: { inOctets: 918233, outOctets: 1283930, inErrors: 0, outErrors: 2 },
           optics: { rxPowerDbm: null, txPowerDbm: null },
@@ -38,6 +42,8 @@ export class InterfaceService {
           description: "Uplink to spine-02",
           mode: "trunk",
           vlan: { nativeVlan: 1, allowedVlans: [10, 40, 50] },
+          speed: "25G",
+          media: "sfp",
           status: "up",
           counters: { inOctets: 884921103, outOctets: 1000392101, inErrors: 1, outErrors: 0 },
           optics: { rxPowerDbm: -2.8, txPowerDbm: -2.0 },
@@ -68,11 +74,47 @@ export class InterfaceService {
       description: input.description ?? existing[index].description,
       mode: input.mode,
       vlan: normalizeVlanConfig(input),
+      speed: input.speed ?? existing[index].speed,
     };
 
     existing[index] = updated;
     this.interfaces.set(input.switchId, existing);
     return updated;
+  }
+
+  bulkUpdate(input: BulkUpdateInterfaceInput): NetworkInterface[] {
+    const existing = this.interfaces.get(input.switchId);
+
+    if (!existing) {
+      return [];
+    }
+
+    const selectedNames = new Set(input.names);
+    const updatedInterfaces: NetworkInterface[] = [];
+    const updatedList = existing.map((networkInterface) => {
+      if (!selectedNames.has(networkInterface.name)) {
+        return networkInterface;
+      }
+
+      const selectedIndex = input.names.indexOf(networkInterface.name);
+      const description = input.descriptionTemplate === undefined
+        ? networkInterface.description
+        : applyDescriptionTemplate(input.descriptionTemplate, selectedIndex);
+      const mode = input.mode ?? networkInterface.mode;
+      const updated: NetworkInterface = {
+        ...networkInterface,
+        description,
+        mode,
+        speed: input.speed ?? networkInterface.speed,
+        vlan: input.vlan ? normalizeVlanConfig({ ...input, mode, vlan: input.vlan, name: networkInterface.name }) : networkInterface.vlan,
+      };
+
+      updatedInterfaces.push(updated);
+      return updated;
+    });
+
+    this.interfaces.set(input.switchId, updatedList);
+    return updatedInterfaces;
   }
 }
 
@@ -88,4 +130,8 @@ function normalizeVlanConfig(input: UpdateInterfaceInput): NetworkInterface["vla
     nativeVlan: input.vlan.nativeVlan ?? 1,
     allowedVlans: Array.from(new Set(input.vlan.allowedVlans)).sort((left, right) => left - right),
   };
+}
+
+function applyDescriptionTemplate(template: string, selectedIndex: number): string {
+  return template.replace(/\{(\d+)\}/g, (_match, start: string) => String(Number(start) + selectedIndex));
 }
